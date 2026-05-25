@@ -7,10 +7,12 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import questionary
+
 if TYPE_CHECKING:
     from dbodoo.config import DoodbaDetection
 
-from dbodoo.ui import console, error_console
+from dbodoo.ui import SelectionCancelledError, console, error_console
 
 
 class DockerError(Exception):
@@ -40,6 +42,51 @@ def detect_compose_command() -> list[str]:
         "Install Docker with the Compose plugin (v2) or 'docker-compose' (v1)."
     )
     raise DockerError(msg)
+
+
+def _handle_restore_failure(
+    cmd: list[str],
+    exit_code: int,
+    destination_db: str,
+    project_path: Path,
+) -> None:
+    """Called after a failed click-odoo-restoredb run.
+
+    Asks the user whether to retry with ``--force`` (which drops and recreates
+    the destination database).  The Docker output is already visible in the
+    terminal so the user can read the actual error before deciding.
+
+    Raises:
+        DockerError: if the user declines, cancels, or the forced retry fails.
+        SelectionCancelledError: if the prompt is cancelled (Ctrl-C).
+    """
+    error_console.print(
+        f"\n[bold yellow]⚠[/bold yellow]  "
+        f"click-odoo-restoredb exited with code {exit_code}."
+    )
+
+    answer = questionary.confirm(
+        f"Rerun with --force? "
+        f"(drops and recreates the '{destination_db}' database)",
+        default=False,
+    ).ask()
+
+    if answer is None:
+        raise SelectionCancelledError("Restore prompt cancelled.")
+
+    if not answer:
+        raise DockerError(
+            f"Restore aborted — '{destination_db}' was not modified."
+        )
+
+    console.print(f"Retrying with [bold]--force[/bold]…")
+    forced = subprocess.run([*cmd, "--force"], cwd=project_path)
+    if forced.returncode != 0:
+        msg = (
+            f"click-odoo-restoredb --force exited with code {forced.returncode}. "
+            "Check the Docker Compose output above for details."
+        )
+        raise DockerError(msg)
 
 
 def restore_database(
@@ -82,7 +129,6 @@ def restore_database(
         "click-odoo-restoredb",
         destination_db,
         mount_target,
-        "--force",
     ]
 
     console.print(
@@ -93,10 +139,6 @@ def restore_database(
     result = subprocess.run(cmd, cwd=project_path)
 
     if result.returncode != 0:
-        msg = (
-            f"click-odoo-restoredb exited with code {result.returncode}. "
-            "Check the Docker Compose output above for details."
-        )
-        raise DockerError(msg)
+        _handle_restore_failure(cmd, result.returncode, destination_db, project_path)
 
     console.print(f"[bold green]✓[/bold green] Database restored as [cyan]{destination_db}[/cyan].")
