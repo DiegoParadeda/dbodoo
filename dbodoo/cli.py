@@ -10,8 +10,8 @@ from dbodoo import __version__
 from dbodoo.backup import BackupError
 from dbodoo.config import (
     ConfigError,
-    RemotesFileExistsError,
     RemotesFileNotFoundError,
+    ProjectConfig,
     add_remote,
     build_remote_config,
     get_remotes_file_path,
@@ -22,7 +22,6 @@ from dbodoo.docker import DockerError
 from dbodoo.remote import backup_and_restore_remote, backup_remote, restore_remote
 from dbodoo.restore import RestoreError
 from dbodoo.ui import (
-    MODE_BACKUP_RESTORE,
     SelectionCancelledError,
     ask_add_or_overwrite,
     ask_remote_config,
@@ -60,6 +59,68 @@ def main(
 ) -> None:
     """Run dbodoo commands from the current project directory."""
 
+
+# ── Internal helpers ──────────────────────────────────────────────────────────
+
+def _wizard_init(project_path: Path) -> Path:
+    """Run the interactive init wizard and return the path to .remotes.json.
+
+    Handles both the "create new" and "add to existing" flows.
+    Raises :exc:`SelectionCancelledError` or :exc:`ConfigError` on failure.
+    """
+    remotes_file = get_remotes_file_path(project_path)
+    file_exists = remotes_file.exists()
+
+    if file_exists:
+        action = ask_add_or_overwrite()
+    else:
+        action = "create"
+
+    mode = ask_remote_mode()
+    answers = ask_remote_config(mode=mode)
+    remote_cfg = build_remote_config(
+        dbname=answers.dbname,
+        remote_address=answers.remote_address,
+        password=answers.password,
+    )
+
+    if action == "overwrite":
+        remotes_path = write_remotes(project_path, {answers.name: remote_cfg}, overwrite=True)
+    else:
+        remotes_path = add_remote(
+            project_path,
+            answers.name,
+            remote_cfg,
+            overwrite_existing_name=False,
+        )
+
+    return remotes_path
+
+
+def _ensure_project_config(project_path: Path) -> ProjectConfig:
+    """Load project config, running the init wizard automatically if missing.
+
+    When ``.remotes.json`` does not exist the user is informed and the
+    interactive wizard starts immediately — no need to run ``dbodoo init``
+    first.
+
+    Raises:
+        ConfigError: for any config problem other than a missing file.
+        SelectionCancelledError: if the user cancels the wizard.
+    """
+    try:
+        return load_project_config(project_path)
+    except RemotesFileNotFoundError:
+        console.print(
+            "[yellow]Nenhuma configuração encontrada.[/yellow] "
+            "Vamos criar o [cyan].remotes.json[/cyan] agora:\n"
+        )
+        remotes_path = _wizard_init(project_path)
+        console.print(f"\n[bold green]✓[/bold green] Configuração salva em {remotes_path}\n")
+        return load_project_config(project_path)
+
+
+# ── Commands ──────────────────────────────────────────────────────────────────
 
 @app.command()
 def hello() -> None:
@@ -99,56 +160,39 @@ def init(
 ) -> None:
     """Create or update .remotes.json with an interactive wizard."""
     project_path: Path = current_project_path()
+    remotes_file = get_remotes_file_path(project_path)
+    file_exists = remotes_file.exists()
 
     try:
         # ── Non-interactive path (all flags provided) ──────────────────────
         if name is not None and dbname is not None:
-            remote = build_remote_config(
+            remote_cfg = build_remote_config(
                 dbname=dbname,
                 remote_address=remote_address,
                 password=password,
             )
             if force:
-                remotes_path = write_remotes(project_path, {name: remote}, overwrite=True)
+                remotes_path = write_remotes(project_path, {name: remote_cfg}, overwrite=True)
             else:
-                remotes_path = add_remote(project_path, name, remote)
+                remotes_path = add_remote(project_path, name, remote_cfg)
             console.print(f"[bold green]✓[/bold green] Saved {remotes_path}")
             return
 
         # ── Interactive path ───────────────────────────────────────────────
-        remotes_file = get_remotes_file_path(project_path)
-        file_exists = remotes_file.exists()
-
-        action: str
-        if file_exists and not force:
-            action = ask_add_or_overwrite()
-        elif force:
-            action = "overwrite"
-        else:
-            action = "create"
-
-        mode = ask_remote_mode()
-        answers = ask_remote_config(mode=mode)
-        remote = build_remote_config(
-            dbname=answers.dbname,
-            remote_address=answers.remote_address,
-            password=answers.password,
-        )
-
-        if action == "overwrite":
+        if force and file_exists:
+            # --force skips the add/overwrite question
+            mode = ask_remote_mode()
+            answers = ask_remote_config(mode=mode)
+            remote_cfg = build_remote_config(
+                dbname=answers.dbname,
+                remote_address=answers.remote_address,
+                password=answers.password,
+            )
             remotes_path = write_remotes(
-                project_path,
-                {answers.name: remote},
-                overwrite=True,
+                project_path, {answers.name: remote_cfg}, overwrite=True
             )
         else:
-            # "add" or "create"
-            remotes_path = add_remote(
-                project_path,
-                answers.name,
-                remote,
-                overwrite_existing_name=False,
-            )
+            remotes_path = _wizard_init(project_path)
 
     except (ConfigError, ValueError) as error:
         error_console.print(f"[bold red]Error:[/bold red] {error}")
@@ -223,7 +267,7 @@ def remote(
     project_path: Path = current_project_path()
 
     try:
-        project_config = load_project_config(project_path)
+        project_config = _ensure_project_config(project_path)
         selected = choose_remote_name(project_config.remotes)
 
         if do_both:
@@ -232,7 +276,9 @@ def remote(
                 selected,
                 destination_db=destination_db,
             )
-            console.print(f"[bold green]✓[/bold green] Backup + restore complete. ZIP: {backup_path}")
+            console.print(
+                f"[bold green]✓[/bold green] Backup + restore complete. ZIP: {backup_path}"
+            )
 
         elif do_backup:
             backup_path = backup_remote(project_config, selected)
@@ -249,10 +295,6 @@ def remote(
                 f"→ [cyan]{destination_db}[/cyan]"
             )
 
-    except RemotesFileNotFoundError as error:
-        error_console.print(f"[bold red]Error:[/bold red] {error}")
-        error_console.print("Run [cyan]dbodoo init[/cyan] to create .remotes.json.")
-        raise typer.Exit(code=1) from error
     except ConfigError as error:
         error_console.print(f"[bold red]Error:[/bold red] {error}")
         error_console.print(
@@ -260,7 +302,7 @@ def remote(
         )
         raise typer.Exit(code=1) from error
     except SelectionCancelledError as error:
-        error_console.print("Remote selection cancelled.")
+        error_console.print("Cancelled.")
         raise typer.Exit(code=1) from error
     except BackupError as error:
         error_console.print(f"[bold red]Error:[/bold red] {error}")
