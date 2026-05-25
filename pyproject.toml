@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dbodoo"
+version = "0.1.0"
+description = "CLI for Odoo/Doodba database workflows."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [
+    { name = "dbodoo contributors" },
+]
+keywords = ["odoo", "doodba", "database", "backup", "restore", "cli"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
+    "Topic :: Software Development",
+]
+dependencies = [
+    "odoorpc>=0.10.1",
+    "requests>=2.31.0",
+    "rich>=13.7.0",
+    "typer>=0.12.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/dbodoo/dbodoo"
+Issues = "https://github.com/dbodoo/dbodoo/issues"
+
+[project.scripts]
+dbodoo = "dbodoo.cli:app"
+
+[tool.setuptools.packages.find]
+include = ["dbodoo*"]
+
+[tool.pyright]
+pythonVersion = "3.10"
+typeCheckingMode = "basic"
