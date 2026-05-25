@@ -147,6 +147,13 @@ dbodoo admin reset --db staging
 dbodoo admin reset --keep-2fa
 ```
 
+Before running, the command always shows the target database and asks for
+confirmation — press **Enter** to accept or type a different name:
+
+```text
+Local database name: (devel)
+```
+
 Runs a `click-odoo` script inside the `odoo` Docker Compose service (same
 container as `dbodoo remote -r`) with a read-only bind-mount, so no extra
 volume configuration is required.
@@ -169,6 +176,52 @@ What the reset does:
 | `--user-id INT` | `2` | Database id of the user |
 | `--db TEXT` | `devel` | Local database name |
 | `--disable-2fa` / `--keep-2fa` | `--disable-2fa` | Whether to disable TOTP |
+
+---
+
+### `dbodoo neutralize mail`
+
+Disable all outgoing mail servers in a restored local database to prevent
+accidental email delivery to real customers.
+
+```bash
+# Neutralize the default 'devel' database
+dbodoo neutralize mail
+
+# Neutralize a different database
+dbodoo neutralize mail --db staging
+```
+
+Before running, the command asks you to confirm (or change) the target
+database — press **Enter** to accept or type a different name:
+
+```text
+Local database name: (devel)
+```
+
+What it does:
+
+```python
+env['ir.mail_server'].sudo().search([]).write({'active': False})
+```
+
+Expected output:
+
+```text
+Neutralizing outgoing mail (db=devel)…
+Found 2 mail server(s).
+All outgoing mail servers disabled successfully.
+✓ Mail neutralization complete.
+```
+
+Uses `docker compose run --rm -T odoo shell -d {db}` with stdin piping — no
+external dependencies beyond core Odoo.
+
+**Options:**
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--db TEXT` | `devel` | Local database name |
 
 ---
 

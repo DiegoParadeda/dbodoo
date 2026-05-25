@@ -58,6 +58,31 @@ def _ask_optional_text(message: str, password: bool = False) -> str | None:
     return stripped or None
 
 
+def ask_local_db(default: str = "devel") -> str:
+    """Confirm (or change) the local database name before a destructive operation.
+
+    Shows the current value as the default so the user can press Enter to
+    accept it or type a different name.
+
+    Args:
+        default: Pre-filled database name (e.g. from ``--db`` option).
+
+    Returns:
+        The confirmed or overridden database name.
+
+    Raises:
+        SelectionCancelledError: if the user cancels (Ctrl-C).
+    """
+    answer = questionary.text(
+        "Local database name:",
+        default=default,
+    ).ask()
+    if answer is None:
+        raise SelectionCancelledError("Database selection cancelled.")
+    stripped = answer.strip()
+    return stripped if stripped else default
+
+
 def ask_remote_mode() -> str:
     """Ask the user which mode they want for the remote config.
 

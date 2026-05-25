@@ -8,6 +8,8 @@ import typer
 
 from dbodoo import __version__
 from dbodoo.admin import AdminError, reset_admin
+from dbodoo.neutralize.mail import neutralize_mail
+from dbodoo.neutralize.utils import NeutralizeError
 from dbodoo.backup import BackupError
 from dbodoo.config import (
     ConfigError,
@@ -29,6 +31,7 @@ from dbodoo.ui import (
     MODE_RESTORE_ONLY,
     SelectionCancelledError,
     ask_add_or_overwrite,
+    ask_local_db,
     ask_remote_config,
     ask_remote_mode,
     choose_remote_name,
@@ -48,6 +51,12 @@ admin_app = typer.Typer(
     no_args_is_help=True,
 )
 app.add_typer(admin_app, name="admin")
+
+neutralize_app = typer.Typer(
+    help="Neutralize local database settings to prevent accidents.",
+    no_args_is_help=True,
+)
+app.add_typer(neutralize_app, name="neutralize")
 
 
 def version_callback(value: bool) -> None:
@@ -391,9 +400,10 @@ def admin_reset(
     project_path: Path = current_project_path()
 
     try:
+        confirmed_db = ask_local_db(default=db)
         reset_admin(
             project_path=project_path,
-            dbname=db,
+            dbname=confirmed_db,
             login=login,
             password=password,
             user_id=user_id,
@@ -404,6 +414,42 @@ def admin_reset(
         raise typer.Exit(code=1) from error
     except DockerError as error:
         error_console.print(f"[bold red]Error:[/bold red] {error}")
+        raise typer.Exit(code=1) from error
+    except SelectionCancelledError as error:
+        error_console.print("Cancelled.")
+        raise typer.Exit(code=1) from error
+
+
+@neutralize_app.command("mail")
+def neutralize_mail_cmd(
+    db: str = typer.Option(
+        "devel",
+        "--db",
+        help="Local database name (default: devel).",
+    ),
+) -> None:
+    """Disable all outgoing mail servers to prevent accidental email delivery.
+
+    Sets active=False on every ir.mail_server record.
+
+    \b
+    Examples:
+      dbodoo neutralize mail            Neutralize the 'devel' database
+      dbodoo neutralize mail --db prod  Neutralize a specific database
+    """
+    project_path: Path = current_project_path()
+
+    try:
+        confirmed_db = ask_local_db(default=db)
+        neutralize_mail(project_path=project_path, dbname=confirmed_db)
+    except NeutralizeError as error:
+        error_console.print(f"[bold red]Error:[/bold red] {error}")
+        raise typer.Exit(code=1) from error
+    except DockerError as error:
+        error_console.print(f"[bold red]Error:[/bold red] {error}")
+        raise typer.Exit(code=1) from error
+    except SelectionCancelledError as error:
+        error_console.print("Cancelled.")
         raise typer.Exit(code=1) from error
 
 
