@@ -1,76 +1,76 @@
 # dbodoo
 
-CLI Python para workflows de banco de dados Odoo/Doodba.
+Python CLI for Odoo/Doodba database workflows.
 
-Automatiza backup remoto, restore local via Docker Compose e gerenciamento de
-múltiplos ambientes, sempre operando a partir do diretório atual (`Path.cwd()`).
+Automates remote backup, local restore via Docker Compose, and multi-environment
+management — always operating from the current working directory (`Path.cwd()`).
 
-## Instalação
+## Installation
 
-Modo isolado com `pipx` (recomendado):
+Isolated install with `pipx` (recommended):
 
 ```bash
 pipx install dbodoo
 ```
 
-Desenvolvimento local:
+Local development:
 
 ```bash
 pipx install --editable .
-# ou
+# or
 pip install -e .
 ```
 
-## Fluxo rápido
+## Quick start
 
 ```bash
-cd ~/projects/meu-projeto-doodba
+cd ~/projects/my-doodba-project
 
-# 1. Baixar backup do servidor remoto
+# 1. Download a backup from the remote server
 dbodoo remote -b
 
-# 2. Restaurar o ZIP baixado no banco local
+# 2. Restore the downloaded ZIP into the local database
 dbodoo remote -r
 
-# 3. Ou fazer os dois de uma vez
+# 3. Or do both in one step
 dbodoo remote -b -r
 ```
 
-Se não existir `.remotes.json`, o wizard de configuração inicia
-automaticamente no primeiro comando.
+If `.remotes.json` does not exist yet, the configuration wizard starts
+automatically on the first command.
 
 ---
 
-## Comandos
+## Commands
 
 ### `dbodoo init`
 
-Cria ou atualiza o `.remotes.json` com wizard interativo.
+Create or update `.remotes.json` with an interactive wizard.
 
 ```bash
 dbodoo init
 ```
 
-O wizard pergunta:
+The wizard asks:
 
-1. **Modo** — determina quais campos são necessários:
-   - **Backup + Restore** — baixa o ZIP e restaura localmente (URL + senha + dbname)
-   - **Backup only** — só baixa o ZIP (URL + senha + dbname)
-   - **Restore only** — só restaura um ZIP já existente (apenas dbname)
-2. Remote name (modos backup), database name, URL e senha
+1. **Mode** — determines which fields are required:
+   - **Backup + Restore** — downloads the ZIP and restores locally (URL + password + dbname)
+   - **Backup only** — downloads the ZIP only (URL + password + dbname)
+   - **Restore only** — restores an existing ZIP (dbname only)
+2. Remote name (backup modes), database name, URL, and password
 
-Se `.remotes.json` já existir, o wizard oferece adicionar um novo remote ou
-sobrescrever o arquivo. Use `--force` para sobrescrever sem perguntar.
+If `.remotes.json` already exists, the wizard offers to add another remote or
+overwrite the file. Use `--force` to overwrite without prompting.
 
-**Sem prompts (CI / scripts):**
+**Non-interactive (CI / scripts):**
 
 ```bash
 # Backup + Restore
 dbodoo init --name prod --dbname prod \
-            --remote-address https://cliente.odoo.com/ \
-            --password admin
+            --remote-address https://client.odoo.com/ \
+            --password masterpassword
 
-# Restore-only (sem URL nem senha)
+# Restore-only (no URL or password needed)
 dbodoo init --name prod --dbname prod
 ```
 
@@ -78,90 +78,90 @@ dbodoo init --name prod --dbname prod
 
 ### `dbodoo remote -b`
 
-Baixa um ZIP de backup do servidor Odoo remoto.
+Download a backup ZIP from the remote Odoo server.
 
 ```bash
 dbodoo remote -b
 ```
 
-- Conecta em `https://<remote_address>/web/database/backup`
-- Exibe barra de progresso Rich durante o download
-- Salva em `../<dbname>.zip` (um nível acima da raiz do projeto)
-- Erros diferenciados: timeout, falha de conexão, senha incorreta (Odoo
-  retorna HTML em vez do ZIP), HTTP 4xx/5xx
+- Connects to `https://<remote_address>/web/database/backup`
+- Shows a Rich progress bar during the download
+- Saves to `../<dbname>.zip` (one level above the project root)
+- Distinct error messages for: timeout, connection failure, wrong password
+  (Odoo returns HTML instead of a ZIP), HTTP 4xx/5xx
 
 ---
 
 ### `dbodoo remote -r`
 
-Restaura o último ZIP baixado no banco de dados local via Docker Compose.
+Restore the last downloaded ZIP into the local database via Docker Compose.
 
 ```bash
 dbodoo remote -r
 
-# Restaurar em banco diferente de 'devel' (padrão)
-dbodoo remote -r --destination-db homolog
+# Restore into a database other than 'devel' (the default)
+dbodoo remote -r --destination-db staging
 ```
 
-- Espera o ZIP em `../<dbname>.zip` — rode `-b` antes se não existir
-- Detecta Docker Compose v2 (`docker compose`) com fallback para v1 (`docker-compose`)
-- Executa `click-odoo-restoredb` dentro do serviço `odoo` via bind-mount read-only
-- Se o banco de destino já existir, pergunta se quer reexecutar com `--force`
-  (dropa e recria o banco) — nunca força automaticamente
-- Emite aviso se o diretório não parecer um projeto Doodba (markers ausentes),
-  mas não bloqueia
+- Expects the ZIP at `../<dbname>.zip` — run `-b` first if it does not exist
+- Detects Docker Compose v2 (`docker compose`) with fallback to v1 (`docker-compose`)
+- Runs `click-odoo-restoredb` inside the `odoo` service via a read-only bind-mount
+- If the destination database already exists, asks whether to rerun with `--force`
+  (drops and recreates the database) — never forces automatically
+- Emits a warning if the directory does not look like a Doodba project (missing
+  markers), but does not block
 
 ---
 
 ### `dbodoo remote -b -r`
 
-Baixa o backup e restaura em uma única etapa.
+Download a backup and restore it in a single step.
 
 ```bash
 dbodoo remote -b -r
 
-# Com banco de destino explícito
-dbodoo remote -b -r --destination-db homolog
+# With an explicit destination database
+dbodoo remote -b -r --destination-db staging
 ```
 
-Se o download falhar, o restore não é tentado.
+If the download fails, the restore is never attempted.
 
 ---
 
 ### `dbodoo choose`
 
-Seleciona e imprime o nome de um remote (útil em scripts).
+Select and print a remote name (useful in scripts).
 
 ```bash
 dbodoo choose
 ```
 
-Com um único remote configurado, seleção é automática.
+With a single remote configured, selection is automatic.
 
 ---
 
-## Estrutura do `.remotes.json`
+## `.remotes.json` structure
 
-O arquivo fica na raiz do projeto (ao lado do `docker-compose.yml`).
+The file lives at the project root, next to `docker-compose.yml`.
 
 **Backup + Restore / Backup only:**
 
 ```json
 {
   "prod": {
-    "remote_address": "cliente.odoo.com",
+    "remote_address": "client.odoo.com",
     "dbname": "prod",
-    "password": "senhamestre"
+    "password": "masterpassword"
   },
   "staging": {
-    "remote_address": "staging.cliente.odoo.com",
+    "remote_address": "staging.client.odoo.com",
     "dbname": "staging",
-    "password": "senhamestre"
+    "password": "masterpassword"
   }
 }
 ```
 
-**Restore only** (sem conexão remota):
+**Restore only** (no remote connection required):
 
 ```json
 {
@@ -171,47 +171,46 @@ O arquivo fica na raiz do projeto (ao lado do `docker-compose.yml`).
 }
 ```
 
-URLs são normalizadas ao salvar: `https://cliente.odoo.com:8069/` → `cliente.odoo.com:8069`.
+URLs are normalised on save: `https://client.odoo.com:8069/` → `client.odoo.com:8069`.
 
 ---
 
-## Detecção de projeto
+## Project detection
 
-O dbodoo localiza a raiz do projeto subindo o diretório a partir do `cwd`,
-procurando por:
+dbodoo locates the project root by walking up from `cwd`, looking for:
 
 1. `.remotes.json`
-2. Marcadores Doodba: `common.yaml`, `docker-compose.yml`, `odoo/custom/src`
+2. Doodba markers: `common.yaml`, `docker-compose.yml`, `odoo/custom/src`
 
-A configuração é sempre local ao projeto — não existe arquivo global.
+Configuration is always local to the project — there is no global config file.
 
 ---
 
 ## Troubleshooting
 
-### ZIP não encontrado ao restaurar
+### Backup ZIP not found
 
 ```text
-Error: Backup ZIP not found at /home/.../projeto.zip.
+Error: Backup ZIP not found at /home/.../project.zip.
 Run dbodoo remote -b first to download it.
 ```
 
-Execute `dbodoo remote -b` antes do restore.
+Run `dbodoo remote -b` before attempting a restore.
 
 ---
 
-### Senha incorreta no backup remoto
+### Wrong master password
 
 ```text
-Error: Authentication failed for 'cliente.odoo.com'. The server returned
+Error: Authentication failed for 'client.odoo.com'. The server returned
 an HTML page instead of a ZIP. Check the master password.
 ```
 
-Verifique a senha em `.remotes.json` ou rode `dbodoo init` para atualizar.
+Check the password in `.remotes.json` or run `dbodoo init` to update it.
 
 ---
 
-### Banco de destino já existe
+### Destination database already exists
 
 ```text
 Error: Destination database already exists: devel
@@ -219,23 +218,24 @@ Error: Destination database already exists: devel
 ? Rerun with --force? (drops and recreates the 'devel' database) (y/N)
 ```
 
-Responda `y` para dropar e recriar o banco, ou `n` para cancelar sem alterar nada.
+Answer `y` to drop and recreate the database, or `n` to cancel without
+touching anything.
 
 ---
 
-### Docker Compose não encontrado
+### Docker Compose not found
 
 ```text
 Error: Docker Compose not found. Install Docker with the Compose plugin (v2)
 or 'docker-compose' (v1).
 ```
 
-Instale o [Docker Desktop](https://docs.docker.com/get-docker/) ou o plugin
-Compose: `apt install docker-compose-plugin`.
+Install [Docker Desktop](https://docs.docker.com/get-docker/) or the Compose
+plugin: `apt install docker-compose-plugin`.
 
 ---
 
-### Diretório não parece projeto Doodba
+### Directory does not look like a Doodba project
 
 ```text
 Warning: This directory does not look like a Doodba project
@@ -243,15 +243,15 @@ Warning: This directory does not look like a Doodba project
 The Docker restore may not work as expected.
 ```
 
-O restore continua, mas pode falhar se o serviço `odoo` não existir no
-`docker-compose.yml`. Rode a partir da raiz do projeto Doodba.
+The restore continues, but may fail if the `odoo` service is not defined in
+`docker-compose.yml`. Run dbodoo from the Doodba project root.
 
 ---
 
-### `.remotes.json` não encontrado
+### `.remotes.json` not found
 
-O comando `remote` inicia o wizard de configuração automaticamente. Para criar
-o arquivo manualmente:
+The `remote` command starts the configuration wizard automatically. To create
+the file manually:
 
 ```bash
 dbodoo init
