@@ -237,6 +237,47 @@ def load_remotes(project_path: Path | None = None) -> RemotesConfig:
     return remotes
 
 
+def add_remote(
+    project_path: Path,
+    name: str,
+    remote: RemoteConfig,
+    overwrite_existing_name: bool = False,
+) -> Path:
+    """Add or update a single remote in an existing (or new) .remotes.json.
+
+    Unlike :func:`write_remotes`, this function merges the new remote into
+    whatever is already in the file instead of replacing everything.
+
+    Args:
+        project_path: Directory used to locate (or create) ``.remotes.json``.
+        name: Key for the new remote entry.
+        remote: Config dict for the remote.
+        overwrite_existing_name: If *False* and a remote with *name* already
+            exists, raises :exc:`ConfigError`.
+
+    Returns:
+        Path to the written ``.remotes.json`` file.
+    """
+    remotes_path = get_remotes_file_path(project_path)
+    validated = validate_remote(name, remote, RESTORE_REMOTE_FIELDS)
+
+    if remotes_path.exists():
+        existing = load_remotes(project_path)
+        if name in existing and not overwrite_existing_name:
+            msg = f"Remote '{name}' already exists in {remotes_path}. Use --force to overwrite."
+            raise ConfigError(msg)
+        existing[name] = validated
+    else:
+        existing = {name: validated}
+
+    remotes_path.parent.mkdir(parents=True, exist_ok=True)
+    with remotes_path.open("w", encoding="utf-8") as file_handle:
+        json.dump(existing, file_handle, indent=2)
+        file_handle.write("\n")
+
+    return remotes_path
+
+
 def load_project_config(project_path: Path) -> ProjectConfig:
     """Load dbodoo configuration from a project path."""
     root_path = find_project_root(project_path)
