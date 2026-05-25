@@ -7,7 +7,7 @@ from pathlib import Path
 import typer
 
 from dbodoo import __version__
-from dbodoo.config import ConfigError, load_remotes
+from dbodoo.config import ConfigError, load_project_config
 from dbodoo.ui import SelectionCancelledError, choose_remote_name, console, error_console
 from dbodoo.utils import current_project_path
 
@@ -53,8 +53,8 @@ def choose() -> None:
     project_path: Path = current_project_path()
 
     try:
-        remotes = load_remotes(project_path)
-        selected = choose_remote_name(remotes)
+        project_config = load_project_config(project_path)
+        selected = choose_remote_name(project_config.remotes)
     except ConfigError as error:
         error_console.print(f"[bold red]Error:[/bold red] {error}")
         raise typer.Exit(code=1) from error

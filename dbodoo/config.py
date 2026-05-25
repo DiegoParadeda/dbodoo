@@ -7,10 +7,25 @@ from dataclasses import dataclass
 from json import JSONDecodeError
 from pathlib import Path
 from typing import Any, TypeAlias
+from urllib.parse import urlsplit
 
 REMOTES_FILENAME = ".remotes.json"
+DoodbaMarker: TypeAlias = str
 RemoteConfig: TypeAlias = dict[str, Any]
 RemotesConfig: TypeAlias = dict[str, RemoteConfig]
+
+DOODBA_MARKERS: tuple[DoodbaMarker, ...] = (
+    "common.yaml",
+    "docker-compose.yml",
+    "odoo/custom/src",
+)
+REQUIRED_REMOTE_FIELDS: tuple[str, ...] = (
+    "remote_address",
+    "dbname",
+    "password",
+)
+BACKUP_REMOTE_FIELDS: tuple[str, ...] = REQUIRED_REMOTE_FIELDS
+RESTORE_REMOTE_FIELDS: tuple[str, ...] = ("dbname",)
 
 
 class ConfigError(Exception):
@@ -25,6 +40,19 @@ class InvalidRemotesConfigError(ConfigError):
     """Raised when .remotes.json has invalid content."""
 
 
+class InvalidRemoteError(ConfigError):
+    """Raised when a remote entry is incomplete or invalid."""
+
+
+@dataclass(frozen=True)
+class DoodbaDetection:
+    """Result of Doodba project detection."""
+
+    project_path: Path
+    is_doodba: bool
+    missing_markers: tuple[DoodbaMarker, ...]
+
+
 @dataclass(frozen=True)
 class ProjectConfig:
     """Configuration discovered from the current project directory."""
@@ -34,9 +62,63 @@ class ProjectConfig:
     remotes: RemotesConfig
 
 
+def normalize_remote_address(address: str) -> str:
+    """Normalize a remote address while preserving ports and valid subpaths."""
+    stripped = address.strip()
+    if not stripped:
+        msg = "Remote address cannot be empty"
+        raise InvalidRemoteError(msg)
+
+    parsed = urlsplit(stripped)
+    if parsed.scheme and parsed.netloc:
+        normalized = f"{parsed.netloc}{parsed.path}"
+        if parsed.query:
+            normalized = f"{normalized}?{parsed.query}"
+        if parsed.fragment:
+            normalized = f"{normalized}#{parsed.fragment}"
+    else:
+        normalized = stripped
+
+    return normalized.rstrip("/")
+
+
+def detect_doodba(project_path: Path | None = None) -> DoodbaDetection:
+    """Detect whether a path looks like a Doodba project root."""
+    root_path = (project_path or Path.cwd()).resolve()
+    missing_markers = tuple(
+        marker for marker in DOODBA_MARKERS if not (root_path / marker).exists()
+    )
+
+    return DoodbaDetection(
+        project_path=root_path,
+        is_doodba=not missing_markers,
+        missing_markers=missing_markers,
+    )
+
+
+def is_doodba_project(project_path: Path | None = None) -> bool:
+    """Return whether a path looks like a Doodba project root."""
+    return detect_doodba(project_path).is_doodba
+
+
+def find_project_root(start_path: Path | None = None) -> Path:
+    """Find the current project root from a starting path."""
+    current_path = (start_path or Path.cwd()).resolve()
+    if current_path.is_file():
+        current_path = current_path.parent
+
+    for candidate in (current_path, *current_path.parents):
+        if (candidate / REMOTES_FILENAME).is_file():
+            return candidate
+        if is_doodba_project(candidate):
+            return candidate
+
+    return current_path
+
+
 def find_remotes_file(project_path: Path | None = None) -> Path:
     """Return the .remotes.json path for a project, or raise if missing."""
-    root_path = (project_path or Path.cwd()).resolve()
+    root_path = find_project_root(project_path)
     remotes_path = root_path / REMOTES_FILENAME
 
     if not remotes_path.is_file():
@@ -44,6 +126,31 @@ def find_remotes_file(project_path: Path | None = None) -> Path:
         raise RemotesFileNotFoundError(msg)
 
     return remotes_path
+
+
+def validate_remote(
+    name: str,
+    remote: RemoteConfig,
+    required_fields: tuple[str, ...] = (),
+) -> RemoteConfig:
+    """Validate and normalize one remote entry."""
+    if not name.strip():
+        msg = f"{REMOTES_FILENAME} contains an invalid remote name"
+        raise InvalidRemoteError(msg)
+
+    normalized: RemoteConfig = dict(remote)
+    for field in required_fields:
+        value = normalized.get(field)
+        if not isinstance(value, str) or not value.strip():
+            msg = f"Remote '{name}' is missing required field '{field}'"
+            raise InvalidRemoteError(msg)
+        normalized[field] = value.strip()
+
+    remote_address = normalized.get("remote_address")
+    if isinstance(remote_address, str) and remote_address.strip():
+        normalized["remote_address"] = normalize_remote_address(remote_address)
+
+    return normalized
 
 
 def load_remotes(project_path: Path | None = None) -> RemotesConfig:
@@ -69,7 +176,10 @@ def load_remotes(project_path: Path | None = None) -> RemotesConfig:
         if not isinstance(remote, dict):
             msg = f"Remote '{name}' must be a JSON object"
             raise InvalidRemotesConfigError(msg)
-        remotes[name] = remote
+        try:
+            remotes[name] = validate_remote(name, remote)
+        except InvalidRemoteError as error:
+            raise InvalidRemotesConfigError(str(error)) from error
 
     if not remotes:
         msg = f"{REMOTES_FILENAME} does not define any remotes"
@@ -80,11 +190,12 @@ def load_remotes(project_path: Path | None = None) -> RemotesConfig:
 
 def load_project_config(project_path: Path) -> ProjectConfig:
     """Load dbodoo configuration from a project path."""
-    remotes_path = find_remotes_file(project_path)
-    remotes = load_remotes(project_path)
+    root_path = find_project_root(project_path)
+    remotes_path = find_remotes_file(root_path)
+    remotes = load_remotes(root_path)
 
     return ProjectConfig(
-        project_path=project_path.resolve(),
+        project_path=root_path,
         remotes_path=remotes_path,
         remotes=remotes,
     )

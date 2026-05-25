@@ -39,7 +39,7 @@ Hello from dbodoo!
 Project path: /caminho/do/projeto/atual
 ```
 
-Para selecionar um remote definido no `.remotes.json` do diretorio atual:
+Para selecionar um remote definido no `.remotes.json` da raiz do projeto atual:
 
 ```bash
 dbodoo choose
@@ -68,6 +68,16 @@ o nome final do remote selecionado:
 ```text
 prod
 ```
+
+O dbodoo detecta a raiz do projeto a partir do `Path.cwd()`, procurando por
+`.remotes.json` ou por marcadores de projeto Doodba. A configuracao continua sendo
+sempre local ao projeto, sem arquivo global. Enderecos remotos carregados da
+configuracao sao normalizados internamente, por exemplo
+`https://cliente.odoo.com:8069/` vira `cliente.odoo.com:8069`.
+
+As chaves obrigatorias de cada remote dependem do comando executado. Por exemplo,
+backup remoto precisa de `remote_address`, `dbname` e `password`; restore local a
+partir de um ZIP precisa pelo menos de `dbname`.
 
 ## Roadmap
 
