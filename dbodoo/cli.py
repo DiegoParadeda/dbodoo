@@ -22,6 +22,10 @@ from dbodoo.docker import DockerError
 from dbodoo.remote import backup_and_restore_remote, backup_remote, restore_remote
 from dbodoo.restore import RestoreError
 from dbodoo.ui import (
+    MODE_BACKUP_ONLY,
+    MODE_BACKUP_RESTORE,
+    MODE_LABELS,
+    MODE_RESTORE_ONLY,
     SelectionCancelledError,
     ask_add_or_overwrite,
     ask_remote_config,
@@ -62,8 +66,13 @@ def main(
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
-def _wizard_init(project_path: Path) -> Path:
+def _wizard_init(project_path: Path, mode: str | None = None) -> Path:
     """Run the interactive init wizard and return the path to .remotes.json.
+
+    Args:
+        project_path: Root directory of the project.
+        mode: When provided the mode selection step is skipped and this value
+              is used directly (e.g. inferred from the calling command).
 
     Handles both the "create new" and "add to existing" flows.
     Raises :exc:`SelectionCancelledError` or :exc:`ConfigError` on failure.
@@ -76,7 +85,12 @@ def _wizard_init(project_path: Path) -> Path:
     else:
         action = "create"
 
-    mode = ask_remote_mode()
+    if mode is None:
+        mode = ask_remote_mode()
+    else:
+        label = MODE_LABELS.get(mode, mode)
+        console.print(f"  Modo: [cyan]{label}[/cyan] (pré-selecionado)\n")
+
     answers = ask_remote_config(mode=mode)
     remote_cfg = build_remote_config(
         dbname=answers.dbname,
@@ -97,12 +111,16 @@ def _wizard_init(project_path: Path) -> Path:
     return remotes_path
 
 
-def _ensure_project_config(project_path: Path) -> ProjectConfig:
+def _ensure_project_config(project_path: Path, mode: str | None = None) -> ProjectConfig:
     """Load project config, running the init wizard automatically if missing.
 
     When ``.remotes.json`` does not exist the user is informed and the
     interactive wizard starts immediately — no need to run ``dbodoo init``
     first.
+
+    Args:
+        project_path: Root directory of the project.
+        mode: Passed to :func:`_wizard_init` to skip the mode-selection step.
 
     Raises:
         ConfigError: for any config problem other than a missing file.
@@ -115,7 +133,7 @@ def _ensure_project_config(project_path: Path) -> ProjectConfig:
             "[yellow]Nenhuma configuração encontrada.[/yellow] "
             "Vamos criar o [cyan].remotes.json[/cyan] agora:\n"
         )
-        remotes_path = _wizard_init(project_path)
+        remotes_path = _wizard_init(project_path, mode=mode)
         console.print(f"\n[bold green]✓[/bold green] Configuração salva em {remotes_path}\n")
         return load_project_config(project_path)
 
@@ -266,8 +284,17 @@ def remote(
 
     project_path: Path = current_project_path()
 
+    # Infer the wizard mode from which flags were passed so the user is not
+    # asked to confirm something we already know.
+    if do_both:
+        inferred_mode = MODE_BACKUP_RESTORE
+    elif do_backup:
+        inferred_mode = MODE_BACKUP_ONLY
+    else:
+        inferred_mode = MODE_RESTORE_ONLY
+
     try:
-        project_config = _ensure_project_config(project_path)
+        project_config = _ensure_project_config(project_path, mode=inferred_mode)
         selected = choose_remote_name(project_config.remotes)
 
         if do_both:

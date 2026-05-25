@@ -13,7 +13,15 @@ error_console = Console(stderr=True)
 
 # Remote wizard modes
 MODE_BACKUP_RESTORE = "backup_restore"
+MODE_BACKUP_ONLY = "backup_only"
 MODE_RESTORE_ONLY = "restore_only"
+
+# Human-readable labels for each mode
+MODE_LABELS: dict[str, str] = {
+    MODE_BACKUP_RESTORE: "Backup + Restore",
+    MODE_BACKUP_ONLY: "Backup only",
+    MODE_RESTORE_ONLY: "Restore only",
+}
 
 
 class SelectionCancelledError(Exception):
@@ -54,14 +62,19 @@ def ask_remote_mode() -> str:
     """Ask the user which mode they want for the remote config.
 
     Returns:
-        ``MODE_BACKUP_RESTORE`` or ``MODE_RESTORE_ONLY``.
+        One of :data:`MODE_BACKUP_RESTORE`, :data:`MODE_BACKUP_ONLY`,
+        or :data:`MODE_RESTORE_ONLY`.
     """
     answer = questionary.select(
         "What will this remote be used for?",
         choices=[
             questionary.Choice(
-                "Backup + Restore  (requires URL and master password)",
+                "Backup + Restore  (URL + password; downloads and restores)",
                 value=MODE_BACKUP_RESTORE,
+            ),
+            questionary.Choice(
+                "Backup only  (URL + password; downloads the ZIP)",
+                value=MODE_BACKUP_ONLY,
             ),
             questionary.Choice(
                 "Restore only  (only needs the database name)",
@@ -103,35 +116,45 @@ def ask_add_or_overwrite() -> str:
 def ask_remote_config(mode: str = MODE_BACKUP_RESTORE) -> RemoteAnswers:
     """Ask for remote configuration values.
 
-    In *backup_restore* mode both ``remote_address`` and ``password`` are
-    required.  In *restore_only* mode they are skipped entirely.
+    Field matrix per mode:
+
+    +------------------+------+-------+----------------+----------+
+    | mode             | name | dbname | remote_address | password |
+    +==================+======+========+================+==========+
+    | backup_restore   | yes  | yes    | required       | required |
+    | backup_only      | yes  | yes    | required       | required |
+    | restore_only     | —    | yes    | —              | —        |
+    +------------------+------+-------+----------------+----------+
+
+    In *restore_only* mode the remote name is derived from *dbname*
+    so the user is not asked twice for essentially the same value.
 
     Args:
-        mode: One of :data:`MODE_BACKUP_RESTORE` or :data:`MODE_RESTORE_ONLY`.
+        mode: One of the ``MODE_*`` constants from this module.
     """
+    if mode == MODE_RESTORE_ONLY:
+        # Only ask for what we actually need
+        dbname = _ask_required_text("Database name:")
+        return RemoteAnswers(
+            name=dbname,
+            dbname=dbname,
+            remote_address=None,
+            password=None,
+        )
+
+    # backup_restore or backup_only — need connection details
     name = _ask_required_text("Remote name:", default="prod")
     dbname = _ask_required_text("Database name:", default=name)
-
-    if mode == MODE_BACKUP_RESTORE:
-        remote_address = _ask_optional_text("Remote URL/address:")
-        if not remote_address:
-            # keep asking until the user provides a value
-            remote_address = _ask_required_text("Remote URL/address (required for backup):")
-        password = _ask_optional_text(
-            "Master password:",
-            password=True,
-        )
-        if not password:
-            password = _ask_required_text("Master password (required for backup):")
-    else:
-        remote_address = None
-        password = None
+    remote_address = _ask_required_text("Remote URL/address:")
+    password_raw = _ask_optional_text("Master password:", password=True)
+    if not password_raw:
+        password_raw = _ask_required_text("Master password (required for backup):")
 
     return RemoteAnswers(
         name=name,
         dbname=dbname,
         remote_address=remote_address,
-        password=password,
+        password=password_raw,
     )
 
 
