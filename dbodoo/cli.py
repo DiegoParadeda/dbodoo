@@ -7,7 +7,8 @@ from pathlib import Path
 import typer
 
 from dbodoo import __version__
-from dbodoo.ui import console
+from dbodoo.config import ConfigError, load_remotes
+from dbodoo.ui import SelectionCancelledError, choose_remote_name, console, error_console
 from dbodoo.utils import current_project_path
 
 app = typer.Typer(
@@ -44,6 +45,24 @@ def hello() -> None:
     project_path: Path = current_project_path()
     console.print("[bold green]Hello from dbodoo![/bold green]")
     console.print(f"Project path: [cyan]{project_path}[/cyan]")
+
+
+@app.command()
+def choose() -> None:
+    """Choose a remote from .remotes.json."""
+    project_path: Path = current_project_path()
+
+    try:
+        remotes = load_remotes(project_path)
+        selected = choose_remote_name(remotes)
+    except ConfigError as error:
+        error_console.print(f"[bold red]Error:[/bold red] {error}")
+        raise typer.Exit(code=1) from error
+    except SelectionCancelledError as error:
+        error_console.print("Remote selection cancelled")
+        raise typer.Exit(code=1) from error
+
+    console.print(selected)
 
 
 if __name__ == "__main__":

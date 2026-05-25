@@ -39,6 +39,36 @@ Hello from dbodoo!
 Project path: /caminho/do/projeto/atual
 ```
 
+Para selecionar um remote definido no `.remotes.json` do diretorio atual:
+
+```bash
+dbodoo choose
+```
+
+Exemplo de `.remotes.json`:
+
+```json
+{
+  "prod": {
+    "remote_address": "example.odoo.com",
+    "dbname": "prod",
+    "password": "admin"
+  },
+  "staging": {
+    "remote_address": "staging.odoo.com",
+    "dbname": "staging",
+    "password": "admin"
+  }
+}
+```
+
+Se houver apenas um remote, ele sera selecionado automaticamente. O comando imprime
+o nome final do remote selecionado:
+
+```text
+prod
+```
+
 ## Roadmap
 
 - `backup`: baixar backups remotos via `/web/database/backup`
