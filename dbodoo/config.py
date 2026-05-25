@@ -36,6 +36,10 @@ class RemotesFileNotFoundError(ConfigError):
     """Raised when .remotes.json cannot be found."""
 
 
+class RemotesFileExistsError(ConfigError):
+    """Raised when trying to create an existing .remotes.json."""
+
+
 class InvalidRemotesConfigError(ConfigError):
     """Raised when .remotes.json has invalid content."""
 
@@ -128,6 +132,11 @@ def find_remotes_file(project_path: Path | None = None) -> Path:
     return remotes_path
 
 
+def get_remotes_file_path(project_path: Path | None = None) -> Path:
+    """Return where .remotes.json should live for a project."""
+    return find_project_root(project_path) / REMOTES_FILENAME
+
+
 def validate_remote(
     name: str,
     remote: RemoteConfig,
@@ -151,6 +160,46 @@ def validate_remote(
         normalized["remote_address"] = normalize_remote_address(remote_address)
 
     return normalized
+
+
+def build_remote_config(
+    dbname: str,
+    remote_address: str | None = None,
+    password: str | None = None,
+) -> RemoteConfig:
+    """Build a normalized remote config from user input."""
+    remote: RemoteConfig = {"dbname": dbname.strip()}
+
+    if remote_address and remote_address.strip():
+        remote["remote_address"] = normalize_remote_address(remote_address)
+    if password and password.strip():
+        remote["password"] = password.strip()
+
+    return validate_remote("remote", remote, RESTORE_REMOTE_FIELDS)
+
+
+def write_remotes(
+    project_path: Path,
+    remotes: RemotesConfig,
+    overwrite: bool = False,
+) -> Path:
+    """Write .remotes.json in a project root."""
+    remotes_path = get_remotes_file_path(project_path)
+    normalized_remotes = {
+        name: validate_remote(name, remote, RESTORE_REMOTE_FIELDS)
+        for name, remote in remotes.items()
+    }
+
+    if remotes_path.exists() and not overwrite:
+        msg = f"Configuration file already exists: {remotes_path}"
+        raise RemotesFileExistsError(msg)
+
+    remotes_path.parent.mkdir(parents=True, exist_ok=True)
+    with remotes_path.open("w", encoding="utf-8") as file_handle:
+        json.dump(normalized_remotes, file_handle, indent=2)
+        file_handle.write("\n")
+
+    return remotes_path
 
 
 def load_remotes(project_path: Path | None = None) -> RemotesConfig:

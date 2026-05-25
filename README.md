@@ -79,6 +79,18 @@ As chaves obrigatorias de cada remote dependem do comando executado. Por exemplo
 backup remoto precisa de `remote_address`, `dbname` e `password`; restore local a
 partir de um ZIP precisa pelo menos de `dbname`.
 
+Para criar um `.remotes.json` local com o wizard:
+
+```bash
+dbodoo init
+```
+
+Tambem e possivel criar sem prompts:
+
+```bash
+dbodoo init --name prod --dbname prod --remote-address https://cliente.odoo.com/ --password admin
+```
+
 ## Roadmap
 
 - `backup`: baixar backups remotos via `/web/database/backup`
