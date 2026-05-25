@@ -201,9 +201,14 @@ Local database name: (devel)
 
 What it does:
 
-```python
-env['ir.mail_server'].sudo().search([]).write({'active': False})
+```sql
+UPDATE ir_mail_server SET active = FALSE WHERE active = TRUE;
 ```
+
+> **Note:** Direct SQL is used instead of the ORM because Odoo 18 added a
+> constraint in `ir.mail_server.write()` that refuses to archive servers
+> still referenced by email templates. SQL bypasses that check while remaining
+> safe for local use.
 
 Expected output:
 
