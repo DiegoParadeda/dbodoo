@@ -91,6 +91,15 @@ Tambem e possivel criar sem prompts:
 dbodoo init --name prod --dbname prod --remote-address https://cliente.odoo.com/ --password admin
 ```
 
+Para baixar um ZIP de backup remoto:
+
+```bash
+dbodoo remote -b
+```
+
+O backup e salvo por padrao em `../<dbname>.zip`, preservando o comportamento do
+script original usado em projetos Doodba.
+
 ## Roadmap
 
 - `backup`: baixar backups remotos via `/web/database/backup`
