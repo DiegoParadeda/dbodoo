@@ -128,6 +128,50 @@ If the download fails, the restore is never attempted.
 
 ---
 
+### `dbodoo admin reset`
+
+Reset an Odoo admin user: login, password, TOTP 2FA, and active status.
+
+```bash
+# Reset to defaults (login=admin, password=admin, user id=2, db=devel)
+dbodoo admin reset
+
+# Custom credentials
+dbodoo admin reset --login admin --password secret
+
+# Different user or database
+dbodoo admin reset --user-id 3
+dbodoo admin reset --db staging
+
+# Keep 2FA settings untouched
+dbodoo admin reset --keep-2fa
+```
+
+Runs a `click-odoo` script inside the `odoo` Docker Compose service (same
+container as `dbodoo remote -r`) with a read-only bind-mount, so no extra
+volume configuration is required.
+
+What the reset does:
+
+| Action | Default |
+| --- | --- |
+| Set `active = True` | always |
+| Set `login` | `admin` |
+| Set password | `admin` |
+| NULL `totp_secret` (disable 2FA) | yes (`--disable-2fa`) |
+
+**Options:**
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--login TEXT` | `admin` | New login for the user |
+| `--password TEXT` | `admin` | New plain-text password |
+| `--user-id INT` | `2` | Database id of the user |
+| `--db TEXT` | `devel` | Local database name |
+| `--disable-2fa` / `--keep-2fa` | `--disable-2fa` | Whether to disable TOTP |
+
+---
+
 ### `dbodoo choose`
 
 Select and print a remote name (useful in scripts).

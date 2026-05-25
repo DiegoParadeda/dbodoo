@@ -7,6 +7,7 @@ from pathlib import Path
 import typer
 
 from dbodoo import __version__
+from dbodoo.admin import AdminError, reset_admin
 from dbodoo.backup import BackupError
 from dbodoo.config import (
     ConfigError,
@@ -41,6 +42,12 @@ app = typer.Typer(
     help="Database workflow helper for Odoo/Doodba projects.",
     no_args_is_help=True,
 )
+
+admin_app = typer.Typer(
+    help="Odoo admin user operations.",
+    no_args_is_help=True,
+)
+app.add_typer(admin_app, name="admin")
 
 
 def version_callback(value: bool) -> None:
@@ -335,6 +342,64 @@ def remote(
         error_console.print(f"[bold red]Error:[/bold red] {error}")
         raise typer.Exit(code=1) from error
     except RestoreError as error:
+        error_console.print(f"[bold red]Error:[/bold red] {error}")
+        raise typer.Exit(code=1) from error
+    except DockerError as error:
+        error_console.print(f"[bold red]Error:[/bold red] {error}")
+        raise typer.Exit(code=1) from error
+
+
+@admin_app.command("reset")
+def admin_reset(
+    login: str = typer.Option(
+        "admin",
+        "--login",
+        help="New login (default: admin).",
+    ),
+    password: str = typer.Option(
+        "admin",
+        "--password",
+        help="New password (default: admin).",
+    ),
+    user_id: int = typer.Option(
+        2,
+        "--user-id",
+        help="Database id of the user to reset (default: 2).",
+    ),
+    db: str = typer.Option(
+        "devel",
+        "--db",
+        help="Local database name to connect to (default: devel).",
+    ),
+    disable_2fa: bool = typer.Option(
+        True,
+        "--disable-2fa/--keep-2fa",
+        help="Disable TOTP 2FA (default: --disable-2fa).",
+    ),
+) -> None:
+    """Reset an Odoo admin user: login, password, 2FA, and active status.
+
+    \b
+    Examples:
+      dbodoo admin reset                       Reset to defaults (login=admin, password=admin)
+      dbodoo admin reset --login myuser        Set a custom login
+      dbodoo admin reset --password secret     Set a custom password
+      dbodoo admin reset --user-id 3           Reset the user with id=3
+      dbodoo admin reset --db mydb             Target a specific local database
+      dbodoo admin reset --keep-2fa            Leave 2FA settings untouched
+    """
+    project_path: Path = current_project_path()
+
+    try:
+        reset_admin(
+            project_path=project_path,
+            dbname=db,
+            login=login,
+            password=password,
+            user_id=user_id,
+            disable_2fa=disable_2fa,
+        )
+    except AdminError as error:
         error_console.print(f"[bold red]Error:[/bold red] {error}")
         raise typer.Exit(code=1) from error
     except DockerError as error:
