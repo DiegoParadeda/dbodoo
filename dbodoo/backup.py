@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -22,13 +23,28 @@ DEFAULT_TIMEOUT = 1000  # seconds — large databases can take a while
 CHUNK_SIZE = 8192
 
 
+class BackupFormat(str, Enum):
+    """Odoo backup formats accepted by /web/database/backup.
+
+    zip  — full backup: SQL dump + filestore in a ZIP archive.
+    dump — SQL-only pg_dump (no filestore); smaller and faster to transfer.
+    """
+
+    zip = "zip"
+    dump = "dump"
+
+
 class BackupError(Exception):
     """Raised when a remote backup cannot be downloaded."""
 
 
-def build_backup_path(project_path: Path, database: str) -> Path:
+def build_backup_path(
+    project_path: Path,
+    database: str,
+    backup_format: BackupFormat = BackupFormat.zip,
+) -> Path:
     """Return the default local backup path for a database."""
-    return project_path.parent / f"{database}.zip"
+    return project_path.parent / f"{database}.{backup_format.value}"
 
 
 def _check_response_for_auth_error(response: requests.Response, remote_address: str) -> None:
@@ -60,9 +76,22 @@ def _make_progress() -> Progress:
 def download_remote_backup(
     remote: dict[str, Any],
     destination: Path,
+    backup_format: BackupFormat = BackupFormat.zip,
     timeout: int = DEFAULT_TIMEOUT,
 ) -> Path:
-    """Download a remote Odoo database backup as a ZIP file."""
+    """Download a remote Odoo database backup.
+
+    Args:
+        remote: Validated remote config dict (must contain remote_address,
+                dbname, and password).
+        destination: Local path where the backup file will be written.
+        backup_format: ``zip`` (full backup with filestore, default) or
+                       ``dump`` (SQL-only pg_dump, no filestore).
+        timeout: HTTP request timeout in seconds.
+
+    Returns:
+        Path to the downloaded backup file.
+    """
     remote_address = str(remote["remote_address"])
     database = str(remote["dbname"])
     password = str(remote["password"])
@@ -70,11 +99,14 @@ def download_remote_backup(
     url = f"https://{remote_address}/web/database/backup"
     payload = {
         "master_pwd": password,
-        "backup_format": "zip",
+        "backup_format": backup_format.value,
         "name": database,
     }
 
-    console.print(f"Connecting to [cyan]{remote_address}[/cyan]…")
+    console.print(
+        f"Connecting to [cyan]{remote_address}[/cyan]… "
+        f"(format: [bold]{backup_format.value}[/bold])"
+    )
 
     try:
         response = requests.post(
@@ -105,12 +137,13 @@ def download_remote_backup(
 
     _check_response_for_auth_error(response, remote_address)
 
+    filename = destination.name
     content_length = int(response.headers.get("content-length", 0)) or None
     destination.parent.mkdir(parents=True, exist_ok=True)
 
     with _make_progress() as progress:
         task = progress.add_task(
-            f"Downloading [bold]{database}.zip[/bold]",
+            f"Downloading [bold]{filename}[/bold]",
             total=content_length,
         )
         with destination.open("wb") as backup_file:
@@ -119,4 +152,19 @@ def download_remote_backup(
                     backup_file.write(chunk)
                     progress.advance(task, len(chunk))
 
+    file_size = destination.stat().st_size
+    console.print(
+        f"[bold green]✓[/bold green] Downloaded [bold]{filename}[/bold] "
+        f"([cyan]{_fmt_size(file_size)}[/cyan])"
+    )
+
     return destination
+
+
+def _fmt_size(n_bytes: int) -> str:
+    """Return a human-readable file size string."""
+    for unit in ("B", "KB", "MB", "GB"):
+        if n_bytes < 1024:
+            return f"{n_bytes:.1f} {unit}" if unit != "B" else f"{n_bytes} B"
+        n_bytes /= 1024  # type: ignore[assignment]
+    return f"{n_bytes:.1f} TB"

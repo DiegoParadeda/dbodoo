@@ -10,7 +10,8 @@ from dbodoo import __version__
 from dbodoo.admin import AdminError, reset_admin
 from dbodoo.neutralize.mail import neutralize_mail
 from dbodoo.neutralize.utils import NeutralizeError
-from dbodoo.backup import BackupError
+from dbodoo.addons import AddonsError, run_addons
+from dbodoo.backup import BackupError, BackupFormat
 from dbodoo.config import (
     ConfigError,
     RemotesFileNotFoundError,
@@ -257,13 +258,84 @@ def choose() -> None:
     console.print(selected)
 
 
+@app.command("odoo")
+def odoo_cmd(
+    install: str | None = typer.Option(
+        None,
+        "-i",
+        "--install",
+        help="Comma-separated list of addons to install (runs 'addons init').",
+        show_default=False,
+    ),
+    update: str | None = typer.Option(
+        None,
+        "-u",
+        "--update",
+        help="Comma-separated list of addons to update (runs 'addons update').",
+        show_default=False,
+    ),
+    db: str | None = typer.Option(
+        None,
+        "--db",
+        "-d",
+        help=(
+            "Database name. Omit to use the container's default "
+            "(set in odoo.conf — usually 'devel')."
+        ),
+        show_default=False,
+    ),
+) -> None:
+    """Install or update Odoo addons in the local Doodba environment.
+
+    Stops the odoo container before running, so it is safe to use even
+    while the instance is up.  Both flags can be combined: install runs
+    first, update second.
+
+    \b
+    Examples:
+      dbodoo odoo -i my_addon            Install an addon
+      dbodoo odoo -u my_addon            Update an addon
+      dbodoo odoo -i addon1,addon2       Install multiple addons
+      dbodoo odoo -u addon1,addon2       Update multiple addons
+      dbodoo odoo -i base                Safe — unlike invoke, works fine
+      dbodoo odoo -i sale -u stock       Install sale, then update stock
+      dbodoo odoo -u my_addon --db prod  Target a specific database
+    """
+    if not install and not update:
+        error_console.print(
+            "[bold red]Error:[/bold red] Provide at least one of "
+            "[cyan]-i[/cyan] (install) or [cyan]-u[/cyan] (update)."
+        )
+        raise typer.Exit(code=1)
+
+    project_path: Path = current_project_path()
+
+    try:
+        if install:
+            run_addons(project_path, install, "init", db=db)
+            console.print(
+                f"[bold green]✓[/bold green] Installed [cyan]{install}[/cyan]."
+            )
+        if update:
+            run_addons(project_path, update, "update", db=db)
+            console.print(
+                f"[bold green]✓[/bold green] Updated [cyan]{update}[/cyan]."
+            )
+    except AddonsError as error:
+        error_console.print(f"[bold red]Error:[/bold red] {error}")
+        raise typer.Exit(code=1) from error
+    except DockerError as error:
+        error_console.print(f"[bold red]Error:[/bold red] {error}")
+        raise typer.Exit(code=1) from error
+
+
 @app.command()
 def remote(
     backup: bool = typer.Option(
         False,
         "--backup",
         "-b",
-        help="Download a remote database backup ZIP.",
+        help="Download a remote database backup.",
     ),
     restore: bool = typer.Option(
         False,
@@ -277,14 +349,27 @@ def remote(
         "-d",
         help="Local database name to restore into (default: devel).",
     ),
+    backup_format: BackupFormat = typer.Option(
+        BackupFormat.zip,
+        "--format",
+        "-f",
+        help=(
+            "Backup format: 'zip' (full backup with filestore, default) "
+            "or 'dump' (SQL-only pg_dump, no filestore)."
+        ),
+        show_default=True,
+    ),
 ) -> None:
     """Run remote database workflows.
 
     \b
     Examples:
-      dbodoo remote -b          Download backup from remote
-      dbodoo remote -r          Restore last downloaded backup
-      dbodoo remote -b -r       Download backup and restore in one step
+      dbodoo remote -b              Download ZIP backup from remote
+      dbodoo remote -b -f dump      Download SQL-only dump from remote
+      dbodoo remote -r              Restore last downloaded ZIP backup
+      dbodoo remote -r -f dump      Restore last downloaded dump
+      dbodoo remote -b -r           Download ZIP backup and restore in one step
+      dbodoo remote -b -r -f dump   Download dump and restore in one step
     """
     do_backup = backup
     do_restore = restore
@@ -318,13 +403,19 @@ def remote(
                 project_config,
                 selected,
                 destination_db=destination_db,
+                backup_format=backup_format,
             )
             console.print(
-                f"[bold green]✓[/bold green] Backup + restore complete. ZIP: {backup_path}"
+                f"[bold green]✓[/bold green] Backup + restore complete. "
+                f"File: {backup_path}"
             )
 
         elif do_backup:
-            backup_path = backup_remote(project_config, selected)
+            backup_path = backup_remote(
+                project_config,
+                selected,
+                backup_format=backup_format,
+            )
             console.print(f"[bold green]✓[/bold green] Backup saved to {backup_path}")
 
         else:  # restore only
@@ -332,6 +423,7 @@ def remote(
                 project_config,
                 selected,
                 destination_db=destination_db,
+                backup_format=backup_format,
             )
             console.print(
                 f"[bold green]✓[/bold green] Restored {backup_path.name} "
