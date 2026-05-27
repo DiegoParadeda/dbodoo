@@ -50,48 +50,56 @@ def run_addons(
     project_path: Path,
     modules: str,
     mode: str,
-    *,
-    db: str | None = None,
+    db: str = "devel",
+    stop_after_init: bool = True,
 ) -> None:
     """Install or update specific Odoo addons via docker compose.
 
-    Stops the odoo container first, then runs ``addons {mode}`` from
-    click-odoo-contrib inside the container.  The database is inferred from
-    the container's own ``odoo.conf`` (same behaviour as invoke's install
-    task); pass *db* to override explicitly.
+    Stops the odoo container first, then runs the ``odoo`` binary directly
+    inside the container — equivalent to:
+
+    .. code-block:: bash
+
+        docker compose run --rm odoo odoo {-i|-u} modules -d db --stop-after-init
 
     Args:
         project_path: Root of the Doodba project (where docker-compose.yml is).
         modules: Comma-separated list of addon names, e.g. ``"sale,stock"``.
-        mode: ``"init"`` to install, ``"update"`` to update.
-        db: Database name.  When *None* the container default is used.
+        mode: ``"init"`` to install (``-i``), ``"update"`` to update (``-u``).
+        db: Database name (default: ``"devel"``).
+        stop_after_init: Pass ``--stop-after-init`` to prevent Odoo from
+            starting as a server after the operation (default: ``True``).
 
     Raises:
         DockerError: if Docker Compose is not available.
-        AddonsError: if the ``addons`` command exits with a non-zero code.
+        AddonsError: if the odoo command exits with a non-zero code.
     """
     compose_cmd = detect_compose_command()
     _stop_odoo(compose_cmd, project_path)
 
+    flag = "-i" if mode == "init" else "-u"
     verb = "Installing" if mode == "init" else "Updating"
-    db_label = f" on [cyan]{db}[/cyan]" if db else ""
-    console.print(f"{verb} [bold cyan]{modules}[/bold cyan]{db_label}…")
+    console.print(
+        f"{verb} [bold cyan]{modules}[/bold cyan] "
+        f"on database [cyan]{db}[/cyan]…"
+    )
 
     cmd: list[str] = [
         *compose_cmd,
         "run", "--rm",
         "odoo",
-        "addons", mode,
-        "-w", modules,
+        "odoo",
+        flag, modules,
+        "-d", db,
     ]
-    if db:
-        cmd.extend(["-d", db])
+    if stop_after_init:
+        cmd.append("--stop-after-init")
 
     result = subprocess.run(cmd, cwd=project_path, env=_uid_env())
     if result.returncode != 0:
         action = "install" if mode == "init" else "update"
         msg = (
-            f"addons {action} exited with code {result.returncode}. "
+            f"odoo {action} exited with code {result.returncode}. "
             "Check the Docker Compose output above for details."
         )
         raise AddonsError(msg)

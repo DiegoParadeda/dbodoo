@@ -274,18 +274,22 @@ def odoo_cmd(
         help="Comma-separated list of addons to update (runs 'addons update').",
         show_default=False,
     ),
-    db: str | None = typer.Option(
-        None,
+    db: str = typer.Option(
+        "devel",
         "--db",
         "-d",
-        help=(
-            "Database name. Omit to use the container's default "
-            "(set in odoo.conf — usually 'devel')."
-        ),
-        show_default=False,
+        help="Database name (default: devel).",
+    ),
+    no_stop_after_init: bool = typer.Option(
+        False,
+        "--no-stop-after-init",
+        help="Do not pass --stop-after-init (Odoo will start as a server after).",
     ),
 ) -> None:
     """Install or update Odoo addons in the local Doodba environment.
+
+    Equivalent to:
+      docker compose run --rm odoo odoo -u addon -d db --stop-after-init
 
     Stops the odoo container before running, so it is safe to use even
     while the instance is up.  Both flags can be combined: install runs
@@ -293,13 +297,11 @@ def odoo_cmd(
 
     \b
     Examples:
-      dbodoo odoo -i my_addon            Install an addon
-      dbodoo odoo -u my_addon            Update an addon
-      dbodoo odoo -i addon1,addon2       Install multiple addons
-      dbodoo odoo -u addon1,addon2       Update multiple addons
-      dbodoo odoo -i base                Safe — unlike invoke, works fine
-      dbodoo odoo -i sale -u stock       Install sale, then update stock
-      dbodoo odoo -u my_addon --db prod  Target a specific database
+      dbodoo odoo -u base                     Update base on 'devel'
+      dbodoo odoo -u base -d vitalar          Update base on 'vitalar'
+      dbodoo odoo -i my_addon -d devel        Install an addon
+      dbodoo odoo -u addon1,addon2 -d devel   Update multiple addons
+      dbodoo odoo -i sale -u stock -d devel   Install sale, then update stock
     """
     if not install and not update:
         error_console.print(
@@ -308,16 +310,17 @@ def odoo_cmd(
         )
         raise typer.Exit(code=1)
 
+    stop_after_init = not no_stop_after_init
     project_path: Path = current_project_path()
 
     try:
         if install:
-            run_addons(project_path, install, "init", db=db)
+            run_addons(project_path, install, "init", db=db, stop_after_init=stop_after_init)
             console.print(
                 f"[bold green]✓[/bold green] Installed [cyan]{install}[/cyan]."
             )
         if update:
-            run_addons(project_path, update, "update", db=db)
+            run_addons(project_path, update, "update", db=db, stop_after_init=stop_after_init)
             console.print(
                 f"[bold green]✓[/bold green] Updated [cyan]{update}[/cyan]."
             )
